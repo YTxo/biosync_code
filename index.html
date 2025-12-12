@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>نظام يقظ برو 2.3 - تحسينات الرمش والتشتت (Yaqiz Pro XAI)</title>
+    <title>نظام يقظ برو 2.4 - مؤقت التشتت (Yaqiz Pro XAI)</title>
     
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
@@ -250,7 +250,7 @@
         }
         @keyframes spin { 0% { transform: translate(-50%,-50%) rotate(0deg); } 100% { transform: translate(-50%,-50%) rotate(360deg); } }
 
-        /* Yawn Progress Bar */
+        /* Progress Bars */
         #yawn-progress {
             position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
             width: 80%; height: 6px; background: rgba(255,255,255,0.2); border-radius: 3px;
@@ -258,13 +258,20 @@
         }
         #yawn-bar { height: 100%; background: var(--warning); width: 0%; transition: width 0.1s linear; }
 
+        #dist-progress {
+            position: absolute; bottom: 25px; left: 50%; transform: translateX(-50%);
+            width: 80%; height: 6px; background: rgba(255,255,255,0.2); border-radius: 3px;
+            overflow: hidden; display: none;
+        }
+        #dist-bar { height: 100%; background: var(--stress); width: 0%; transition: width 0.1s linear; }
+
     </style>
 </head>
 <body>
 
     <div class="header">
         <div class="logo-area">
-            <h1>Yaqiz Pro <span style="font-size:0.5em; vertical-align:middle; border:1px solid var(--border); padding:2px 6px; border-radius:4px; color:var(--text-sub); background:rgba(255,255,255,0.05)">2.3 BLINK FIX</span></h1>
+            <h1>Yaqiz Pro <span style="font-size:0.5em; vertical-align:middle; border:1px solid var(--border); padding:2px 6px; border-radius:4px; color:var(--text-sub); background:rgba(255,255,255,0.05)">2.4 DIST TIMER</span></h1>
             <p>دمج المؤشرات الحيوية وتتبع حدقة العين</p>
         </div>
         <div class="status-badge" id="sys-status">
@@ -299,8 +306,9 @@
                     <img id="input_image" style="display:none;">
                     <canvas class="output_canvas mirror-mode"></canvas>
                     
-                    <!-- Yawn Progress -->
+                    <!-- Progress Bars -->
                     <div id="yawn-progress"><div id="yawn-bar"></div></div>
+                    <div id="dist-progress"><div id="dist-bar"></div></div>
 
                     <!-- Advanced HUD -->
                     <div class="hud-overlay">
@@ -455,7 +463,8 @@
             THRESH_RMSSD_SLEEP: 60,// Parasympathetic dominance (Drowsiness)
             THRESH_ASYM: 0.85,     // Facial Symmetry (Stroke detection)
             MIN_YAWN_DURATION: 3000, // 3 Seconds
-            MIN_SLEEP_DURATION: 500 // ms - below this is a blink (New)
+            MIN_SLEEP_DURATION: 500, // ms - below this is a blink (New)
+            MIN_DISTRACTION_DURATION: 2000 // 2 Seconds for Distraction (New)
         };
 
         let state = {
@@ -465,6 +474,7 @@
             yawnStartTime: null, // To track duration
             yawnRegistered: false, // To avoid double counting single yawn
             eyeClosedStartTime: null, // Blink timer
+            distractionStartTime: null, // Distraction timer (New)
             fatigueLock: false,
             lastScenario: 'NORMAL'
         };
@@ -542,6 +552,8 @@
         const loader = document.getElementById('loader');
         const yawnProgress = document.getElementById('yawn-progress');
         const yawnBar = document.getElementById('yawn-bar');
+        const distProgress = document.getElementById('dist-progress'); // New
+        const distBar = document.getElementById('dist-bar'); // New
 
         function getDistance(p1, p2) {
             return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
@@ -718,17 +730,36 @@
             // We map Cumulative Yawn so it hits > 75 only after 3 full yawns (3 * 25 = 75)
             let cumulativeYawn = Math.min(100, state.yawnCount * 25);
 
-            // --- IMPROVED DISTRACTION LOGIC (Pupils + Head) ---
+            // --- IMPROVED DISTRACTION LOGIC (Pupils + Head + TIMER) ---
             let riskDist = 0;
             let isHeadTurned = state.yaw < 0.3 || state.yaw > 0.7;
-            let isEyesAverted = state.gazeRatio < 0.35 || state.gazeRatio > 0.65; // Pupil distraction
+            let isEyesAverted = state.gazeRatio < 0.35 || state.gazeRatio > 0.65;
             
-            if (isHeadTurned) riskDist = 80; // Head turn is strong distraction
-            
-            // Fix: Increase Eye Aversion Risk to ensure it triggers DISTRACTED state
-            if (!isHeadTurned && isEyesAverted) riskDist = 80; // Eyes only is now STRONG distraction (was 60)
-            
-            if (isHeadTurned && isEyesAverted) riskDist = 100; // Both is severe
+            // Check for any distraction event
+            if (isHeadTurned || isEyesAverted) {
+                 // Start Timer if not started
+                 if (!state.distractionStartTime) {
+                    state.distractionStartTime = Date.now();
+                    distProgress.style.display = 'block';
+                }
+                
+                // Calculate Duration
+                const duration = Date.now() - state.distractionStartTime;
+                const progress = Math.min(100, (duration / CONFIG.MIN_DISTRACTION_DURATION) * 100);
+                distBar.style.width = progress + '%';
+
+                // Only Trigger Risk if Duration > Threshold
+                if (duration > CONFIG.MIN_DISTRACTION_DURATION) {
+                     if (isHeadTurned) riskDist = 80; // Head turn strong
+                     if (!isHeadTurned && isEyesAverted) riskDist = 80; // Eyes only also strong
+                     if (isHeadTurned && isEyesAverted) riskDist = 100; // Both severe
+                }
+            } else {
+                 // Reset Distraction
+                 state.distractionStartTime = null;
+                 distProgress.style.display = 'none';
+                 distBar.style.width = '0%';
+            }
 
             // Physiological Risks
             let riskPhysio = 0; // Medical (Panic/Attack)
@@ -825,6 +856,7 @@
             state.yawnCount = 0;
             state.yawnStartTime = null;
             state.yawnRegistered = false;
+            state.distractionStartTime = null; // Reset Distraction
             runFusionEngine();
         }
 
