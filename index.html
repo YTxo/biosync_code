@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نظام يقظ برو - الجيل التالي (Yaqiz Pro XAI)</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg-main: #0b0e14;
+            --bg-card: #151b26;
+            --bg-card-hover: #1c2433;
+            --border: #2d3748;
+            --accent: #3b82f6;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --text-main: #f1f5f9;
+            --text-sub: #94a3b8;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-main);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* --- Header --- */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 25px;
+            background: var(--bg-card);
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        
+        .logo-area h1 { margin: 0; font-size: 1.5rem; background: linear-gradient(90deg, #3b82f6, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .logo-area p { margin: 0; font-size: 0.8rem; color: var(--text-sub); }
+        
+        .status-badge {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .status-badge.active { background: rgba(16, 185, 129, 0.1); color: var(--success); border: 1px solid var(--success); }
+
+        /* --- Main Layout --- */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 20px;
+        }
+        @media (max-width: 1100px) { .main-grid { grid-template-columns: 1fr; } }
+
+        /* --- Cards --- */
+        .card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 10px;
+            margin-bottom: 5px;
+        }
+        .card-title { font-weight: 600; font-size: 1.1rem; display: flex; align-items: center; gap: 10px; }
+        .card-icon { color: var(--accent); }
+
+        /* Buttons in Header */
+        .header-btn {
+            background: var(--bg-card-hover);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .header-btn:hover { background: var(--accent); border-color: var(--accent); }
+
+        /* --- Video Section --- */
+        .video-container {
+            position: relative;
+            border-radius: 12px;
+            overflow: hidden;
+            background: #000;
+            width: 100%;
+            height: 500px; /* Fixed height for stability */
+            box-shadow: 0 0 30px rgba(0,0,0,0.5);
+            display: flex; justify-content: center; align-items: center;
+        }
+        
+        video, canvas, img { 
+            width: 100%; height: 100%; 
+            object-fit: contain; 
+        }
+        
+        /* Mirror effect only for webcam video, not images */
+        .mirror-mode { transform: scaleX(-1); }
+
+        /* HUD Overlay */
+        .hud-overlay {
+            position: absolute;
+            top: 15px; left: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 10;
+        }
+        .hud-item {
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(8px);
+            padding: 8px 12px;
+            border-radius: 8px;
+            border-left: 3px solid var(--accent);
+            font-size: 0.85rem;
+            color: white;
+            width: 170px;
+        }
+        .hud-value { float: left; font-weight: bold; color: var(--accent); }
+
+        /* --- Controls & Sliders --- */
+        .control-group { margin-bottom: 15px; }
+        .slider-header { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.9rem; }
+        
+        input[type="range"] {
+            width: 100%; height: 6px; background: var(--bg-main); border-radius: 3px; outline: none; -webkit-appearance: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 16px; height: 16px; background: var(--accent); border-radius: 50%; cursor: pointer; transition: 0.2s;
+        }
+        input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+
+        .scenario-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+        }
+        .scenario-btn {
+            background: var(--bg-card-hover); border: 1px solid var(--border); color: var(--text-sub);
+            padding: 10px; border-radius: 8px; cursor: pointer; transition: 0.2s; font-size: 0.9rem;
+        }
+        .scenario-btn:hover { background: var(--border); }
+        .scenario-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+
+        /* --- XAI Section --- */
+        .xai-panel {
+            grid-column: 1 / -1;
+            display: grid;
+            grid-template-columns: 1fr 1.5fr;
+            gap: 20px;
+        }
+        @media (max-width: 900px) { .xai-panel { grid-template-columns: 1fr; } }
+
+        .diagnosis-box {
+            text-align: center;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            padding: 30px; border-radius: 16px;
+            background: var(--bg-card); border: 1px solid var(--border);
+            transition: 0.3s;
+        }
+
+        .diagnosis-icon { font-size: 3rem; margin-bottom: 15px; }
+        .diagnosis-text { font-size: 1.8rem; font-weight: bold; margin-bottom: 5px; }
+        .diagnosis-sub { font-size: 1rem; opacity: 0.7; }
+
+        .xai-bars {
+            display: flex; flex-direction: column; gap: 12px;
+            padding: 5px;
+        }
+        
+        .xai-row { display: flex; align-items: center; gap: 15px; font-size: 0.9rem; }
+        .xai-label { width: 120px; text-align: right; color: var(--text-sub); }
+        .xai-bar-track { flex: 1; height: 8px; background: var(--bg-main); border-radius: 4px; overflow: hidden; }
+        .xai-bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+        .xai-value { width: 40px; font-weight: bold; text-align: left; }
+
+        /* State Styles */
+        .state-NORMAL { border-color: var(--success); color: var(--success); background: rgba(16, 185, 129, 0.05); }
+        .state-NORMAL .xai-bar-fill { background: var(--success); }
+        
+        .state-DROWSY { border-color: var(--warning); color: var(--warning); background: rgba(245, 158, 11, 0.05); }
+        .state-DROWSY .xai-bar-fill { background: var(--warning); }
+
+        .state-FATIGUE { border-color: #0ea5e9; color: #0ea5e9; background: rgba(14, 165, 233, 0.05); }
+
+        .state-DISTRACTED { border-color: #a855f7; color: #a855f7; background: rgba(168, 85, 247, 0.05); }
+
+        .state-DANGER { border-color: var(--danger); color: var(--danger); background: rgba(239, 68, 68, 0.1); animation: pulse 1s infinite; }
+        .state-DANGER .xai-bar-fill { background: var(--danger); }
+
+        @keyframes pulse { 50% { border-color: transparent; } }
+
+        /* Reset Button */
+        .reset-btn {
+            margin-top: 15px; background: var(--danger); color: white; border: none; padding: 10px 20px;
+            border-radius: 8px; cursor: pointer; display: none; font-weight: bold;
+        }
+        
+        /* Helper Text for Image Mode */
+        .mode-indicator {
+            position: absolute; top: 15px; right: 15px;
+            background: rgba(0,0,0,0.6); color: white; padding: 5px 10px; border-radius: 4px; font-size: 0.8rem;
+            z-index: 10; pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div class="logo-area">
+            <h1>Yaqiz Pro <span style="font-size:0.5em; vertical-align:middle; border:1px solid var(--border); padding:2px 5px; border-radius:4px; color:var(--text-sub)">XAI EDITION</span></h1>
+            <p>نظام المراقبة الذكي المدعوم بالتفسير المنطقي</p>
+        </div>
+        <div class="status-badge active" id="sys-status">
+            <i class="fas fa-circle" style="font-size:0.6rem;"></i>
+            النظام يعمل
+        </div>
+    </div>
+
+    <div class="main-grid">
+        
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title"><i class="fas fa-eye card-icon"></i> الرؤية الحاسوبية</div>
+                
+                <div style="display:flex; gap:10px;">
+                    <input type="file" id="image-upload" accept="image/*" style="display:none" onchange="handleImageUpload(this)">
+                    <button class="header-btn" onclick="document.getElementById('image-upload').click()">
+                        <i class="fas fa-image"></i> رفع صورة
+                    </button>
+                    <button class="header-btn" onclick="activateCamera()">
+                        <i class="fas fa-video"></i> الكاميرا
+                    </button>
+                </div>
+            </div>
+            
+            <div class="video-container">
+                <div class="mode-indicator" id="mode-text">بث مباشر (Camera)</div>
+                <div id="loader" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:white;">جاري تشغيل الكاميرا...</div>
+                
+                <video class="input_video mirror-mode" autoplay playsinline style="display:none"></video>
+                
+                <img id="input_image" style="display:none;">
+                
+                <canvas class="output_canvas mirror-mode"></canvas>
+
+                <div class="hud-overlay">
+                    <div class="hud-item">
+                        <span>EAR (العين)</span>
+                        <span class="hud-value" id="hud-ear">--</span>
+                    </div>
+                    <div class="hud-item">
+                        <span>MAR (الفم)</span>
+                        <span class="hud-value" id="hud-mar">--</span>
+                    </div>
+                    <div class="hud-item" style="border-left-color: var(--success)">
+                        <span>Symmetry (تماثل)</span>
+                        <span class="hud-value" id="hud-sym">--</span>
+                    </div>
+                    <div class="hud-item">
+                        <span>Gaze (انتباه)</span>
+                        <span class="hud-value" id="hud-gaze">--</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="font-size:0.8rem; color:var(--text-sub); margin-top:5px; text-align:center;">
+                * ملاحظة: خط التماثل الأخضر يوضح المسافة بين العين وزاوية الفم. عدم التساوي يشير لتدلي الوجه (مؤشر سكتة)[cite: 88].
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title"><i class="fas fa-heartbeat card-icon"></i> المحاكاة الفسيولوجية</div>
+            </div>
+
+            <div style="margin-bottom:20px;">
+                <label style="font-size:0.85rem; color:var(--text-sub); display:block; margin-bottom:10px;">سيناريوهات جاهزة:</label>
+                <div class="scenario-grid">
+                    <button class="scenario-btn active" onclick="setScenario('NORMAL')">🟢 طبيعي</button>
+                    <button class="scenario-btn" onclick="setScenario('FATIGUE')">🟡 إرهاق</button>
+                    <button class="scenario-btn" onclick="setScenario('STRESS')">🟣 توتر/تشتت</button>
+                    <button class="scenario-btn" onclick="setScenario('EMERGENCY')">🔴 طوارئ طبية</button>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <div class="slider-header">
+                    <span>معدل تقلب القلب (HRV - SDNN) [cite: 19]</span>
+                    <span id="val-sdnn" style="color:var(--accent)">100 ms</span>
+                </div>
+                <input type="range" id="in-sdnn" min="10" max="150" value="100">
+            </div>
+
+            <div class="control-group">
+                <div class="slider-header">
+                    <span>استجابة الجلد (GSR) [cite: 40]</span>
+                    <span id="val-gsr" style="color:var(--warning)">2 µS</span>
+                </div>
+                <input type="range" id="in-gsr" min="0" max="40" value="2">
+            </div>
+
+            <div style="height: 100px; margin-top: auto;">
+                <canvas id="chart-bio"></canvas>
+            </div>
+        </div>
+
+        <div class="xai-panel">
+            
+            <div id="diag-box" class="diagnosis-box state-NORMAL">
+                <i id="diag-icon" class="fas fa-check-circle diagnosis-icon"></i>
+                <div id="diag-text" class="diagnosis-text">Normal</div>
+                <div id="diag-sub" class="diagnosis-sub">السائق في حالة يقظة</div>
+                <button id="reset-btn" class="reset-btn" onclick="resetLock()">⚠️ تأكيد اليقظة</button>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title"><i class="fas fa-brain card-icon"></i> تفسير القرار (XAI Logic)</div>
+                    <small style="color:var(--text-sub)">مساهمة كل عامل في مستوى الخطر (Feature Importance) </small>
+                </div>
+
+                <div class="xai-bars">
+                    <div class="xai-row">
+                        <div class="xai-label">إغلاق العين (PERCLOS)</div>
+                        <div class="xai-bar-track"><div id="risk-eye" class="xai-bar-fill" style="width:0%; background:#f59e0b;"></div></div>
+                        <div id="val-risk-eye" class="xai-value">0%</div>
+                    </div>
+
+                    <div class="xai-row">
+                        <div class="xai-label">تكرار التثاؤب</div>
+                        <div class="xai-bar-track"><div id="risk-yawn" class="xai-bar-fill" style="width:0%; background:#0ea5e9;"></div></div>
+                        <div id="val-risk-yawn" class="xai-value">0%</div>
+                    </div>
+
+                    <div class="xai-row">
+                        <div class="xai-label">تشتت الانتباه</div>
+                        <div class="xai-bar-track"><div id="risk-head" class="xai-bar-fill" style="width:0%; background:#a855f7;"></div></div>
+                        <div id="val-risk-head" class="xai-value">0%</div>
+                    </div>
+
+                    <div class="xai-row">
+                        <div class="xai-label">خطر فسيولوجي (HRV/GSR)</div>
+                        <div class="xai-bar-track"><div id="risk-physio" class="xai-bar-fill" style="width:0%; background:#ef4444;"></div></div>
+                        <div id="val-risk-physio" class="xai-value">0%</div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <script>
+        // --- 1. Global State & Config ---
+        // بناءً على البحث، نستخدم قيم عتبة محددة للكشف عن النعاس والحالات الطبية
+        const CONFIG = {
+            THRESH_EAR: 0.22, // مؤشر إغلاق العين [cite: 73]
+            THRESH_MAR: 0.5,  // مؤشر التثاؤب [cite: 84]
+            THRESH_YAW_DIST: 0.15,
+            THRESH_SDNN_CRIT: 40, // خطر قلبي إذا انخفض SDNN [cite: 26]
+            THRESH_GSR_HIGH: 15,  // توتر عالٍ أو نوبة [cite: 46]
+            THRESH_ASYM: 0.85 // نسبة التماثل للكشف عن السكتة [cite: 87]
+        };
+
+        let state = {
+            sdnn: 100,
+            gsr: 2,
+            ear: 0.3,
+            mar: 0.05,
+            yaw: 0.5,
+            asym: 1.0,
+            yawnCount: 0,
+            isYawning: false,
+            fatigueLock: false
+        };
+
+        let isImageMode = false;
+
+        // --- 2. Chart Setup ---
+        const ctxBio = document.getElementById('chart-bio').getContext('2d');
+        const bioChart = new Chart(ctxBio, {
+            type: 'line',
+            data: {
+                labels: Array(20).fill(''),
+                datasets: [
+                    { label: 'HRV', data: Array(20).fill(100), borderColor: '#3b82f6', tension: 0.4, borderWidth: 2, pointRadius: 0 },
+                    { label: 'GSR', data: Array(20).fill(2), borderColor: '#f59e0b', tension: 0.4, borderWidth: 2, pointRadius: 0 }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: { x: { display: false }, y: { display: false } },
+                animation: { duration: 0 }
+            }
+        });
+
+        // --- 3. UI Controls & Bio Engine ---
+        const sliderSDNN = document.getElementById('in-sdnn');
+        const sliderGSR = document.getElementById('in-gsr');
+        const txtSDNN = document.getElementById('val-sdnn');
+        const txtGSR = document.getElementById('val-gsr');
+
+        sliderSDNN.addEventListener('input', (e) => { 
+            txtSDNN.innerText = e.target.value + ' ms'; 
+            state.sdnn = parseInt(e.target.value);
+            runXAIEngine(); // Re-check logic on slider change
+        });
+
+        sliderGSR.addEventListener('input', (e) => { 
+            txtGSR.innerText = e.target.value + ' µS';
+            state.gsr = parseInt(e.target.value);
+            runXAIEngine();
+        });
+
+        function setScenario(type) {
+            document.querySelectorAll('.scenario-btn').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+
+            if (type === 'NORMAL') { sliderSDNN.value = 100; sliderGSR.value = 2; }
+            if (type === 'FATIGUE') { sliderSDNN.value = 140; sliderGSR.value = 1; }
+            if (type === 'STRESS') { sliderSDNN.value = 35; sliderGSR.value = 20; }
+            if (type === 'EMERGENCY') { sliderSDNN.value = 15; sliderGSR.value = 35; }
+            
+            // Trigger input event to update state text
+            sliderSDNN.dispatchEvent(new Event('input'));
+            sliderGSR.dispatchEvent(new Event('input'));
+        }
+
+        function updateBioLoop() {
+            // Add slight noise for realism (simulating sensor noise)
+            let dispSDNN = state.sdnn + (Math.random() * 5 - 2.5);
+            let dispGSR = state.gsr + (Math.random() * 0.5 - 0.25);
+            
+            const ds0 = bioChart.data.datasets[0].data; ds0.shift(); ds0.push(dispSDNN);
+            const ds1 = bioChart.data.datasets[1].data; ds1.shift(); ds1.push(dispGSR);
+            bioChart.update();
+        }
+        setInterval(updateBioLoop, 500);
+
+        // --- 4. Computer Vision (MediaPipe) ---
+        const videoElement = document.querySelector('.input_video');
+        const imageElement = document.getElementById('input_image');
+        const canvasElement = document.querySelector('.output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const loader = document.getElementById('loader');
+
+        function getDistance(p1, p2) {
+            return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+        }
+
+        function getEAR(lm, indices) {
+            const v = getDistance(lm[indices[1]], lm[indices[5]]) + getDistance(lm[indices[2]], lm[indices[4]]);
+            const h = getDistance(lm[indices[0]], lm[indices[3]]);
+            return v / (2.0 * h);
+        }
+
+        // --- Image Upload Logic ---
+        function handleImageUpload(input) {
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    // Reset Mode
+                    isImageMode = true;
+                    document.getElementById('mode-text').innerText = "تحليل صورة ثابتة (Image)";
+                    
+                    // Hide Video, Show Image
+                    videoElement.pause();
+                    videoElement.style.display = 'none';
+                    imageElement.src = e.target.result;
+                    imageElement.style.display = 'none'; // Keep hidden, draw on canvas
+                    
+                    // Remove mirror effect for static images (text should be readable)
+                    canvasElement.classList.remove('mirror-mode');
+
+                    imageElement.onload = async () => {
+                        // Adjust Canvas to match Image Aspect Ratio
+                        const container = document.querySelector('.video-container');
+                        canvasElement.width = imageElement.naturalWidth;
+                        canvasElement.height = imageElement.naturalHeight;
+                        
+                        // Send to MediaPipe once
+                        await faceMesh.send({image: imageElement});
+                    }
+                }
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+
+        function activateCamera() {
+            isImageMode = false;
+            document.getElementById('mode-text').innerText = "بث مباشر (Camera)";
+            imageElement.style.display = 'none';
+            videoElement.style.display = 'none'; 
+            
+            // Add mirror effect for webcam feel
+            canvasElement.classList.add('mirror-mode');
+            
+            // Restart Camera Loop
+            if(camera) camera.start();
+        }
+
+        function onResults(results) {
+            loader.style.display = 'none';
+            
+            // Setup Canvas sizing for Video Mode
+            if (!isImageMode) {
+                canvasElement.width = videoElement.videoWidth;
+                canvasElement.height = videoElement.videoHeight;
+            }
+            
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                const lm = results.multiFaceLandmarks[0];
+
+                // --- 1. Visual Tracking (Drawing) ---
+                drawConnectors(canvasCtx, lm, FACEMESH_RIGHT_EYE, {color: '#3b82f6', lineWidth: 1});
+                drawConnectors(canvasCtx, lm, FACEMESH_LEFT_EYE, {color: '#3b82f6', lineWidth: 1});
+                drawConnectors(canvasCtx, lm, FACEMESH_LIPS, {color: '#eab308', lineWidth: 1});
+
+                // --- 2. Symmetry Tracking (Medical Analysis) ---
+                // Calculate Centers
+                const lEyeC = { x:(lm[33].x+lm[133].x)/2, y:(lm[33].y+lm[133].y)/2 };
+                const rEyeC = { x:(lm[362].x+lm[263].x)/2, y:(lm[362].y+lm[263].y)/2 };
+                const lMouth = lm[61];
+                const rMouth = lm[291];
+
+                // Calculate Vertical Distances
+                const lDist = getDistance(lEyeC, lMouth);
+                const rDist = getDistance(rEyeC, rMouth);
+                
+                // Color Code Symmetry
+                state.asym = Math.min(lDist, rDist) / Math.max(lDist, rDist);
+                const symColor = state.asym < CONFIG.THRESH_ASYM ? '#ef4444' : '#10b981';
+
+                // Draw Symmetry Lines
+                canvasCtx.beginPath();
+                canvasCtx.moveTo(lEyeC.x * canvasElement.width, lEyeC.y * canvasElement.height);
+                canvasCtx.lineTo(lMouth.x * canvasElement.width, lMouth.y * canvasElement.height);
+                canvasCtx.strokeStyle = symColor;
+                canvasCtx.lineWidth = 3;
+                canvasCtx.stroke();
+
+                canvasCtx.beginPath();
+                canvasCtx.moveTo(rEyeC.x * canvasElement.width, rEyeC.y * canvasElement.height);
+                canvasCtx.lineTo(rMouth.x * canvasElement.width, rMouth.y * canvasElement.height);
+                canvasCtx.strokeStyle = symColor;
+                canvasCtx.lineWidth = 3;
+                canvasCtx.stroke();
+
+                // --- 3. Metrics Calculation ---
+                // EAR (Eye Aspect Ratio)
+                const leftEAR = getEAR(lm, [33, 160, 158, 133, 153, 144]);
+                const rightEAR = getEAR(lm, [362, 385, 387, 263, 373, 380]);
+                state.ear = (leftEAR + rightEAR) / 2;
+
+                // MAR (Mouth Aspect Ratio)
+                const vLip = getDistance(lm[13], lm[14]);
+                const hLip = getDistance(lm[61], lm[291]);
+                state.mar = vLip / hLip;
+
+                // Yaw (Head rotation)
+                const nose = lm[1];
+                const lCheek = lm[234];
+                const rCheek = lm[454];
+                state.yaw = getDistance(nose, lCheek) / getDistance(lCheek, rCheek);
+
+                updateHUD();
+                runXAIEngine();
+            }
+            canvasCtx.restore();
+        }
+
+        function updateHUD() {
+            document.getElementById('hud-ear').innerText = state.ear.toFixed(2);
+            document.getElementById('hud-mar').innerText = state.mar.toFixed(2);
+            document.getElementById('hud-sym').innerText = (state.asym * 100).toFixed(0) + '%';
+            
+            let gazeText = "Center";
+            // Logic for gaze direction
+            if (isImageMode) {
+                 if (state.yaw < 0.4) gazeText = "Right";
+                 if (state.yaw > 0.6) gazeText = "Left";
+            } else {
+                 // Mirror mode swaps logic
+                 if (state.yaw < 0.35) gazeText = "Right";
+                 if (state.yaw > 0.65) gazeText = "Left";
+            }
+            document.getElementById('hud-gaze').innerText = gazeText;
+        }
+
+        // --- 5. Fusion Engine + XAI (The Brain) ---
+        // دمج البيانات الفسيولوجية والبصرية لاتخاذ القرار [cite: 97]
+        function runXAIEngine() {
+            // 1. Calculate Risk Scores (Normalization 0-100)
+            
+            // Eye Risk: EAR < 0.22 is dangerous
+            let riskEye = Math.max(0, Math.min(100, (0.30 - state.ear) / (0.30 - 0.15) * 100));
+
+            // Yawn Logic
+            if (state.mar > CONFIG.THRESH_MAR) {
+                if (!state.isYawning) { state.isYawning = true; state.yawnCount++; }
+            } else { state.isYawning = false; }
+            
+            if (state.yawnCount > 3) state.fatigueLock = true;
+            let riskYawn = Math.min(100, (state.yawnCount / 4) * 100);
+
+            // Distraction Risk (Head Yaw + Stress)
+            let yawDev = Math.abs(state.yaw - 0.5);
+            let riskDistraction = 0;
+            if (yawDev > CONFIG.THRESH_YAW_DIST) riskDistraction += 60;
+            if (state.gsr > 10) riskDistraction += 40; // دمج GSR مع التشتت [cite: 42]
+            riskDistraction = Math.min(100, riskDistraction);
+
+            // Medical/Physio Risk (Stroke or Heart)
+            let riskPhysio = 0;
+            // Heart: Low SDNN (Critical) + High GSR (Acute Stress) [cite: 120]
+            if (state.sdnn < CONFIG.THRESH_SDNN_CRIT) riskPhysio += 50;
+            if (state.gsr > CONFIG.THRESH_GSR_HIGH) riskPhysio += 50;
+            // Stroke: Low Symmetry [cite: 132]
+            if (state.asym < CONFIG.THRESH_ASYM) riskPhysio = 100; // Immediate override
+            riskPhysio = Math.min(100, riskPhysio);
+
+
+            // 2. Determine Dominant State
+            let diagnosis = { state: 'NORMAL', text: 'Normal', icon: 'fa-check-circle', sub: 'القيادة آمنة' };
+
+            // Priority Logic (Decision-Level Fusion) 
+            if (state.fatigueLock) {
+                diagnosis = { state: 'DANGER', text: 'FATIGUE LOCK', icon: 'fa-lock', sub: 'تم قفل النظام: إرهاق متكرر' };
+            } else if (riskPhysio > 80) {
+                diagnosis = { state: 'DANGER', text: 'MEDICAL ALERT', icon: 'fa-heart-broken', sub: 'خطر: نوبة قلبية أو سكتة' };
+            } else if (riskEye > 80) {
+                diagnosis = { state: 'DROWSY', text: 'SLEEPING', icon: 'fa-bed', sub: 'تنبيه: العين مغلقة' };
+            } else if (riskYawn > 70) {
+                diagnosis = { state: 'FATIGUE', text: 'DROWSY', icon: 'fa-tired', sub: 'تنبيه: نعاس وتثاؤب' };
+            } else if (riskDistraction > 60) {
+                diagnosis = { state: 'DISTRACTED', text: 'DISTRACTED', icon: 'fa-eye-slash', sub: 'تنبيه: تشتت الانتباه' };
+            }
+
+            // 3. Update UI
+            updateDiagnosisUI(diagnosis);
+            updateXAIBars(riskEye, riskYawn, riskDistraction, riskPhysio);
+        }
+
+        function updateDiagnosisUI(diag) {
+            const box = document.getElementById('diag-box');
+            const icon = document.getElementById('diag-icon');
+            const text = document.getElementById('diag-text');
+            const sub = document.getElementById('diag-sub');
+            const btn = document.getElementById('reset-btn');
+
+            box.className = `diagnosis-box state-${diag.state}`;
+            icon.className = `fas ${diag.icon} diagnosis-icon`;
+            text.innerText = diag.text;
+            sub.innerText = diag.sub;
+
+            if (diag.state === 'DANGER' && state.fatigueLock) {
+                btn.style.display = 'inline-block';
+            } else {
+                btn.style.display = 'none';
+            }
+        }
+
+        function updateXAIBars(rEye, rYawn, rHead, rPhysio) {
+            // تفسير القرارات باستخدام SHAP-like visualization 
+            document.getElementById('risk-eye').style.width = rEye + '%';
+            document.getElementById('val-risk-eye').innerText = rEye.toFixed(0) + '%';
+
+            document.getElementById('risk-yawn').style.width = rYawn + '%';
+            document.getElementById('val-risk-yawn').innerText = rYawn.toFixed(0) + '%';
+
+            document.getElementById('risk-head').style.width = rHead + '%';
+            document.getElementById('val-risk-head').innerText = rHead.toFixed(0) + '%';
+
+            document.getElementById('risk-physio').style.width = rPhysio + '%';
+            document.getElementById('val-risk-physio').innerText = rPhysio.toFixed(0) + '%';
+        }
+
+        function resetLock() {
+            state.fatigueLock = false;
+            state.yawnCount = 0;
+            runXAIEngine();
+        }
+
+        // --- Init ---
+        const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
+        faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        faceMesh.onResults(onResults);
+        
+        const camera = new Camera(videoElement, {
+            onFrame: async () => { 
+                if (!isImageMode) await faceMesh.send({image: videoElement}); 
+            },
+            width: 640, height: 480
+        });
+        camera.start();
+
+    </script>
+</body>
+</html>
