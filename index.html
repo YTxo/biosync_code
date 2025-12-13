@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>نظام يقظ برو 2.4 - مؤقت التشتت (Yaqiz Pro XAI)</title>
+    <title>نظام يقظ برو - النسخة النهائية (Yaqiz Pro Ultimate)</title>
     
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
@@ -236,12 +236,6 @@
         .bar-fill { height: 100%; width: 0%; border-radius: 4px; transition: width 0.4s ease; }
         .xai-val { width: 35px; font-weight: bold; font-size: 0.8rem; }
 
-        /* Reset Button */
-        .reset-btn {
-            margin-top: 15px; background: var(--critical); color: white; border: none; padding: 10px 25px;
-            border-radius: 8px; cursor: pointer; display: none; font-weight: bold; width: 100%;
-        }
-
         /* Loading */
         .loader {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
@@ -265,13 +259,35 @@
         }
         #dist-bar { height: 100%; background: var(--stress); width: 0%; transition: width 0.1s linear; }
 
+        #blink-progress {
+            position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
+            width: 80%; height: 6px; background: rgba(255,255,255,0.2); border-radius: 3px;
+            overflow: hidden; display: none;
+        }
+        #blink-bar { height: 100%; background: #3b82f6; width: 0%; transition: width 0.05s linear; }
+
+        /* Fatigue Lock Overlay */
+        .fatigue-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9); z-index: 100;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            display: none;
+        }
+        .big-wake-btn {
+            background: var(--critical); color: white; border: 4px solid white;
+            padding: 20px 40px; font-size: 1.5rem; font-weight: bold; border-radius: 50px;
+            cursor: pointer; box-shadow: 0 0 30px var(--critical);
+            animation: pulse-big 1.5s infinite; margin-top: 20px;
+        }
+        @keyframes pulse-big { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
+
     </style>
 </head>
 <body>
 
     <div class="header">
         <div class="logo-area">
-            <h1>Yaqiz Pro <span style="font-size:0.5em; vertical-align:middle; border:1px solid var(--border); padding:2px 6px; border-radius:4px; color:var(--text-sub); background:rgba(255,255,255,0.05)">2.4 DIST TIMER</span></h1>
+            <h1>Yaqiz Pro <span style="font-size:0.5em; vertical-align:middle; border:1px solid var(--border); padding:2px 6px; border-radius:4px; color:var(--text-sub); background:rgba(255,255,255,0.05)">ULTIMATE EDITION</span></h1>
             <p>دمج المؤشرات الحيوية وتتبع حدقة العين</p>
         </div>
         <div class="status-badge" id="sys-status">
@@ -309,6 +325,15 @@
                     <!-- Progress Bars -->
                     <div id="yawn-progress"><div id="yawn-bar"></div></div>
                     <div id="dist-progress"><div id="dist-bar"></div></div>
+                    <div id="blink-progress"><div id="blink-bar"></div></div>
+
+                    <!-- Fatigue Lock Overlay -->
+                    <div id="fatigue-overlay" class="fatigue-overlay">
+                        <i class="fas fa-lock" style="font-size:4rem; color:var(--critical); margin-bottom:20px;"></i>
+                        <div style="color:white; font-size:2rem; margin-bottom:10px; font-weight:bold;">SYSTEM LOCKED</div>
+                        <div style="color:#ccc; margin-bottom:30px;">تم قفل النظام بسبب تكرار النعاس</div>
+                        <button class="big-wake-btn" onclick="resetSystem()">أنا مستيقظ (I AM AWAKE)</button>
+                    </div>
 
                     <!-- Advanced HUD -->
                     <div class="hud-overlay">
@@ -398,7 +423,6 @@
                 <i id="diag-icon" class="fas fa-check-circle diag-icon"></i>
                 <div id="diag-title" class="diag-title">Normal</div>
                 <div id="diag-desc" class="diag-desc">السائق في حالة يقظة</div>
-                <button id="reset-btn" class="reset-btn" onclick="resetSystem()">استعادة النظام</button>
             </div>
 
             <!-- Simulation Controls -->
@@ -419,7 +443,6 @@
                         <span>HRV (SDNN) - صحة القلب</span>
                         <span id="txt-sdnn" style="color:var(--success)">100 ms</span>
                     </div>
-                    <!-- Threshold updated to 50ms (Strict Medical) -->
                     <input type="range" id="sld-sdnn" min="10" max="150" value="100" oninput="updatePhysio()">
                     <div style="font-size:0.7rem; color:var(--text-sub); margin-top:4px;">* الخطر أقل من 50ms (مؤشر نوبة)</div>
                 </div>
@@ -450,31 +473,33 @@
     </div>
 
     <script>
-        // --- Configuration Based on Research PDF ---
+        // --- CONFIGURATION ---
         const CONFIG = {
             THRESH_EAR: 0.22,      // Eye Aspect Ratio threshold
             THRESH_MAR: 0.55,      // Mouth Aspect Ratio (Yawning)
             
-            // UPDATE: Modified to split Stress vs Medical
+            // Medical & Stress Thresholds
             THRESH_SDNN_CRIT: 50,  // Strictly Medical (Heart Attack Risk)
-            THRESH_SDNN_STRESS: 90,// Threshold for High Stress (below this is stress)
+            THRESH_SDNN_STRESS: 90,// Threshold for High Stress
             
             THRESH_GSR_STRESS: 15, // High Stress/Seizure indicator
             THRESH_RMSSD_SLEEP: 60,// Parasympathetic dominance (Drowsiness)
             THRESH_ASYM: 0.85,     // Facial Symmetry (Stroke detection)
-            MIN_YAWN_DURATION: 3000, // 3 Seconds
-            MIN_SLEEP_DURATION: 500, // ms - below this is a blink (New)
-            MIN_DISTRACTION_DURATION: 2000 // 2 Seconds for Distraction (New)
+            
+            // Timers (in ms)
+            MIN_YAWN_DURATION: 3000, // 3 Seconds to count as yawn
+            MIN_SLEEP_DURATION: 2000, // 2 Seconds to count as sleep (Anti-blink)
+            MIN_DISTRACTION_DURATION: 2000 // 2 Seconds for Distraction
         };
 
         let state = {
             sdnn: 100, gsr: 2, rmssd: 40,
             ear: 0.3, mar: 0.1, yaw: 0.5, asym: 1.0, gazeRatio: 0.5,
             yawnCount: 0, 
-            yawnStartTime: null, // To track duration
-            yawnRegistered: false, // To avoid double counting single yawn
-            eyeClosedStartTime: null, // Blink timer
-            distractionStartTime: null, // Distraction timer (New)
+            yawnStartTime: null, 
+            yawnRegistered: false, 
+            eyeClosedStartTime: null, 
+            distractionStartTime: null, 
             fatigueLock: false,
             lastScenario: 'NORMAL'
         };
@@ -510,7 +535,6 @@
             const txtSdnn = document.getElementById('txt-sdnn');
             txtSdnn.innerText = state.sdnn + ' ms';
             
-            // Color logic updated
             if (state.sdnn < CONFIG.THRESH_SDNN_CRIT) txtSdnn.style.color = 'var(--critical)';
             else if (state.sdnn < CONFIG.THRESH_SDNN_STRESS) txtSdnn.style.color = 'var(--stress)';
             else txtSdnn.style.color = 'var(--success)';
@@ -535,10 +559,8 @@
             } else if (type === 'FATIGUE') { 
                 sldSdnn.value = 120; sldGsr.value = 1; sldRmssd.value = 85; 
             } else if (type === 'STRESS') { 
-                // UPDATE: Set to 65 (High Stress but not Medical)
                 sldSdnn.value = 65; sldGsr.value = 25; sldRmssd.value = 20; 
             } else if (type === 'MEDICAL') { 
-                // Medical is critical (< 50)
                 sldSdnn.value = 30; sldGsr.value = 35; sldRmssd.value = 15; 
             }
             updatePhysio();
@@ -550,10 +572,17 @@
         const canvasElement = document.querySelector('.output_canvas');
         const canvasCtx = canvasElement.getContext('2d');
         const loader = document.getElementById('loader');
+        
+        // Progress Bars
         const yawnProgress = document.getElementById('yawn-progress');
         const yawnBar = document.getElementById('yawn-bar');
-        const distProgress = document.getElementById('dist-progress'); // New
-        const distBar = document.getElementById('dist-bar'); // New
+        const distProgress = document.getElementById('dist-progress');
+        const distBar = document.getElementById('dist-bar');
+        const blinkProgress = document.getElementById('blink-progress');
+        const blinkBar = document.getElementById('blink-bar');
+        
+        // Overlay
+        const fatigueOverlay = document.getElementById('fatigue-overlay');
 
         function getDistance(p1, p2) {
             return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
@@ -588,7 +617,7 @@
                 const hLip = getDistance(lm[61], lm[291]);
                 state.mar = vLip / hLip;
 
-                // 3. Head Yaw (Approximation)
+                // 3. Head Yaw
                 state.yaw = getDistance(lm[1], lm[234]) / getDistance(lm[234], lm[454]);
 
                 // 4. Symmetry (Stroke Indicator)
@@ -598,8 +627,7 @@
                 const rDist = getDistance(rEyeC, lm[291]);
                 state.asym = Math.min(lDist, rDist) / Math.max(lDist, rDist);
 
-                // 5. PUPIL TRACKING (New Logic)
-                // Iris indices: Left: 468, Right: 473
+                // 5. PUPIL TRACKING
                 const getGazeRatio = (irisIdx, innerIdx, outerIdx) => {
                     const iris = lm[irisIdx];
                     const inner = lm[innerIdx];
@@ -608,23 +636,15 @@
                     const distToInner = getDistance(inner, iris);
                     return distToInner / totalDist;
                 };
-                // For Right Eye (Screen Right), Inner 362, Outer 263
-                // For Left Eye (Screen Left), Inner 33, Outer 133
-                // Note: Image coordinates, Left Eye is on left of screen
-                const leftRatio = getGazeRatio(468, 33, 133); // Actually this is screen left eye
+                const leftRatio = getGazeRatio(468, 33, 133);
                 const rightRatio = getGazeRatio(473, 362, 263);
-                
-                // Average them. 0.5 is center. <0.3 looking Right (Subject's right), >0.7 looking Left
                 state.gazeRatio = (leftRatio + rightRatio) / 2;
 
-
                 // --- Visualization ---
-                // Eyes
                 const eyeColor = state.ear < CONFIG.THRESH_EAR ? '#ef4444' : '#3b82f6';
                 drawConnectors(canvasCtx, lm, FACEMESH_RIGHT_EYE, {color: eyeColor, lineWidth: 1});
                 drawConnectors(canvasCtx, lm, FACEMESH_LEFT_EYE, {color: eyeColor, lineWidth: 1});
                 
-                // Draw Iris
                 const drawIris = (idx) => {
                     canvasCtx.beginPath();
                     canvasCtx.arc(lm[idx].x * canvasElement.width, lm[idx].y * canvasElement.height, 3, 0, 2*Math.PI);
@@ -634,11 +654,9 @@
                 drawIris(468);
                 drawIris(473);
 
-                // Mouth
                 const mouthColor = state.mar > CONFIG.THRESH_MAR ? '#f59e0b' : '#10b981';
                 drawConnectors(canvasCtx, lm, FACEMESH_LIPS, {color: mouthColor, lineWidth: 1});
 
-                // Symmetry Lines (Only if bad)
                 if (state.asym < CONFIG.THRESH_ASYM) {
                     canvasCtx.strokeStyle = '#dc2626';
                     canvasCtx.lineWidth = 4;
@@ -652,15 +670,27 @@
                     canvasCtx.stroke();
                 }
 
-                // HUD Update
                 document.getElementById('hud-ear').innerText = state.ear.toFixed(2);
                 document.getElementById('hud-mar').innerText = state.mar.toFixed(2);
                 document.getElementById('hud-sym').innerText = (state.asym*100).toFixed(0) + '%';
                 
+                // Advanced HUD Gaze Status
                 let gazeStatus = "CENTER";
-                // Combined Head Yaw + Pupil Logic
-                if (state.yaw < 0.3 || state.gazeRatio < 0.4) gazeStatus = "RIGHT";
-                if (state.yaw > 0.7 || state.gazeRatio > 0.6) gazeStatus = "LEFT";
+                let hDir = "C";
+                if (state.yaw < 0.3) hDir = "R";
+                if (state.yaw > 0.7) hDir = "L";
+                
+                let eDir = "C";
+                if (state.gazeRatio < 0.4) eDir = "R";
+                if (state.gazeRatio > 0.6) eDir = "L";
+
+                if (hDir === "R" && eDir === "L") gazeStatus = "CENTER (Comp)";
+                else if (hDir === "L" && eDir === "R") gazeStatus = "CENTER (Comp)";
+                else if (hDir === "R") gazeStatus = "RIGHT";
+                else if (hDir === "L") gazeStatus = "LEFT";
+                else if (eDir === "R") gazeStatus = "RIGHT (Eyes)";
+                else if (eDir === "L") gazeStatus = "LEFT (Eyes)";
+                
                 document.getElementById('hud-gaze').innerText = gazeStatus;
 
                 runFusionEngine();
@@ -668,120 +698,112 @@
             canvasCtx.restore();
         }
 
-        // --- The Fusion Engine (The Brain) ---
+        // --- The Fusion Engine ---
         function runFusionEngine() {
-            // 1. Feature Extraction & Scoring (0-100)
             
-            // Visual Risks - IMPROVED BLINK LOGIC
+            // 1. Blink Filter
             let riskEye = 0;
             if (state.ear < CONFIG.THRESH_EAR) {
-                // Eyes closed - check for how long
                 if (!state.eyeClosedStartTime) {
                     state.eyeClosedStartTime = Date.now();
+                    blinkProgress.style.display = 'block';
                 }
                 const duration = Date.now() - state.eyeClosedStartTime;
+                const progress = Math.min(100, (duration / CONFIG.MIN_SLEEP_DURATION) * 100);
+                blinkBar.style.width = progress + '%';
                 
-                // Only consider it a sleep risk if closed longer than blink duration
                 if (duration > CONFIG.MIN_SLEEP_DURATION) {
                     riskEye = 100;
-                } else {
-                    riskEye = 0; // Just a blink
                 }
             } else {
-                // Eyes open - reset timer
                 state.eyeClosedStartTime = null;
-                riskEye = 0;
-                if (state.ear < CONFIG.THRESH_EAR + 0.05) riskEye = 50; // Droopy eyes but not closed
+                blinkProgress.style.display = 'none';
+                blinkBar.style.width = '0%';
+                if (state.ear < CONFIG.THRESH_EAR + 0.05) riskEye = 50; 
             }
 
-            // --- IMPROVED YAWN LOGIC ---
+            // 2. Yawn Timer
             let riskYawn = 0;
             if (state.mar > CONFIG.THRESH_MAR) {
-                // Start Timer if not started
                 if (!state.yawnStartTime) {
                     state.yawnStartTime = Date.now();
                     yawnProgress.style.display = 'block';
                 }
-                
-                // Calculate Duration
                 const duration = Date.now() - state.yawnStartTime;
                 const progress = Math.min(100, (duration / CONFIG.MIN_YAWN_DURATION) * 100);
                 yawnBar.style.width = progress + '%';
 
-                // Only count if duration > 3 seconds AND not already registered for this yawn
                 if (duration > CONFIG.MIN_YAWN_DURATION && !state.yawnRegistered) {
                     state.yawnCount++;
                     state.yawnRegistered = true;
                 }
                 
-                // If it's a valid yawn (confirmed), risk is high
                 if (state.yawnRegistered) riskYawn = 100;
-                
             } else {
-                // Reset when mouth closes
                 state.yawnStartTime = null;
                 state.yawnRegistered = false;
                 yawnProgress.style.display = 'none';
                 yawnBar.style.width = '0%';
             }
-
-            // Cumulative Yawn Risk based on count (needs > 3 verified yawns for high risk)
-            // User requested: "yawn doesnt count until the yawn rate is > 75"
-            // We map Cumulative Yawn so it hits > 75 only after 3 full yawns (3 * 25 = 75)
             let cumulativeYawn = Math.min(100, state.yawnCount * 25);
 
-            // --- IMPROVED DISTRACTION LOGIC (Pupils + Head + TIMER) ---
+            // 3. Smart Distraction (with Compensation)
             let riskDist = 0;
-            let isHeadTurned = state.yaw < 0.3 || state.yaw > 0.7;
-            let isEyesAverted = state.gazeRatio < 0.35 || state.gazeRatio > 0.65;
+            let isDistracted = false;
             
-            // Check for any distraction event
-            if (isHeadTurned || isEyesAverted) {
-                 // Start Timer if not started
+            const headRight = state.yaw < 0.3;
+            const headLeft = state.yaw > 0.7;
+            const headCenter = !headRight && !headLeft;
+            
+            const eyesRight = state.gazeRatio < 0.35;
+            const eyesLeft = state.gazeRatio > 0.65;
+            const eyesCenter = !eyesRight && !eyesLeft;
+
+            if (headCenter) {
+                if (!eyesCenter) isDistracted = true;
+            } else if (headRight) {
+                // If head is Right, Eyes MUST be Left to be safe
+                if (!eyesLeft) isDistracted = true;
+            } else if (headLeft) {
+                // If head is Left, Eyes MUST be Right to be safe
+                if (!eyesRight) isDistracted = true;
+            }
+            
+            if (isDistracted) {
                  if (!state.distractionStartTime) {
                     state.distractionStartTime = Date.now();
                     distProgress.style.display = 'block';
                 }
-                
-                // Calculate Duration
                 const duration = Date.now() - state.distractionStartTime;
                 const progress = Math.min(100, (duration / CONFIG.MIN_DISTRACTION_DURATION) * 100);
                 distBar.style.width = progress + '%';
 
-                // Only Trigger Risk if Duration > Threshold
                 if (duration > CONFIG.MIN_DISTRACTION_DURATION) {
-                     if (isHeadTurned) riskDist = 80; // Head turn strong
-                     if (!isHeadTurned && isEyesAverted) riskDist = 80; // Eyes only also strong
-                     if (isHeadTurned && isEyesAverted) riskDist = 100; // Both severe
+                     riskDist = 100; 
                 }
             } else {
-                 // Reset Distraction
                  state.distractionStartTime = null;
                  distProgress.style.display = 'none';
                  distBar.style.width = '0%';
             }
 
-            // Physiological Risks
-            let riskPhysio = 0; // Medical (Panic/Attack)
-            let riskStress = 0; // Cognitive Stress
+            // 4. Physiological Risks
+            let riskPhysio = 0; 
+            let riskStress = 0; 
 
-            // Heart Attack Logic: Very low SDNN (Critical < 50) + High GSR
             if (state.sdnn < CONFIG.THRESH_SDNN_CRIT) riskPhysio += 60; 
             if (state.gsr > CONFIG.THRESH_GSR_STRESS) riskPhysio += 40;
 
-            // Stress Logic: SDNN between 50 and 90 + High GSR
             if (state.sdnn >= CONFIG.THRESH_SDNN_CRIT && state.sdnn < CONFIG.THRESH_SDNN_STRESS) riskStress += 50;
             if (state.gsr > 10) riskStress += 50;
 
-            // Stroke Logic: Visual Asymmetry
             let riskStroke = 0;
             if (state.asym < CONFIG.THRESH_ASYM) riskStroke = 100;
 
-            // Drowsiness Logic: High RMSSD (Parasympathetic) + Yawning
             let riskDrowsyPhysio = 0;
             if (state.rmssd > CONFIG.THRESH_RMSSD_SLEEP) riskDrowsyPhysio = 60;
 
-            // 2. Decision Logic
+            // 5. Decision Tree
             let diag = { code: 'NORMAL', title: 'Normal', desc: 'الحالة مستقرة، القيادة آمنة', icon: 'fa-check-circle', level: 1 };
 
             if (state.fatigueLock) {
@@ -793,7 +815,6 @@
             } else if (riskEye > 90) {
                 diag = { code: 'DROWSY', title: 'SLEEPING', desc: 'خطر: العين مغلقة!', icon: 'fa-bed', level: 3 };
             } else if (riskStress > 80) {
-                // New Stress State
                 diag = { code: 'STRESS', title: 'HIGH STRESS', desc: 'تنبيه: توتر عالٍ، خذ نفساً عميقاً', icon: 'fa-bolt', level: 2 };
             } else if (riskDist > 70) {
                 diag = { code: 'DISTRACTED', title: 'DISTRACTION', desc: 'تنبيه: انظر إلى الطريق (عين/رأس)', icon: 'fa-eye-slash', level: 2 };
@@ -801,23 +822,27 @@
                 diag = { code: 'FATIGUE', title: 'DROWSY', desc: 'تحذير: مؤشرات نعاس وارتخاء', icon: 'fa-coffee', level: 2 };
             }
 
-            // Lock system if continuous danger (More than 5 confirmed yawns)
-            if (diag.code === 'DROWSY' && state.yawnCount > 5) state.fatigueLock = true;
+            // Lock system if continuous danger
+            if (diag.code === 'FATIGUE' && state.yawnCount >= 4) state.fatigueLock = true;
 
             updateUI(diag, {riskEye, cumulativeYawn, riskPhysio, riskDist, riskStroke});
         }
 
         function updateUI(diag, risks) {
-            // Update Diagnosis Box
             const box = document.getElementById('diag-box');
             box.className = `diagnosis-container st-${diag.code}`;
             document.getElementById('diag-title').innerText = diag.title;
             document.getElementById('diag-desc').innerText = diag.desc;
             document.getElementById('diag-icon').className = `fas ${diag.icon} diag-icon`;
             
-            document.getElementById('reset-btn').style.display = state.fatigueLock ? 'inline-block' : 'none';
+            // Toggle Lock Overlay
+            if (state.fatigueLock) {
+                fatigueOverlay.style.display = 'flex';
+            } else {
+                fatigueOverlay.style.display = 'none';
+            }
 
-            // Update Intervention Ladder
+            // Update Ladder
             document.querySelectorAll('.step-node').forEach(n => n.classList.remove('active'));
             document.getElementById(`step-${diag.level}`).classList.add('active');
             
@@ -830,18 +855,10 @@
             document.getElementById('intervention-text').innerText = actionTexts[diag.level];
             document.getElementById('intervention-text').style.color = diag.level > 2 ? 'var(--danger)' : 'var(--text-main)';
 
-            // Update XAI Bars
+            // Update Bars
             setBar('bar-eye', 'val-eye', risks.riskEye);
             setBar('bar-yawn', 'val-yawn', risks.cumulativeYawn);
-            
-            // XAI Logic for bar: If Stress is high but Physio low, show Stress
-            // We use the same bar for "Heart/Physio" but maybe rename it? 
-            // For now, show the MAX of physio or stress
-            let maxPhysioRisk = Math.max(risks.riskPhysio, risks.riskPhysio > 0 ? risks.riskPhysio : 0); // Logic fix: riskPhysio is main, but if stress is dominant, maybe show it?
-            // Actually, let's keep it simple: Show Cardiac risk on the bar, as stress is implicit in distraction usually.
-            // Or better: Show riskPhysio (Cardiac) on the Red bar.
             setBar('bar-hrv', 'val-hrv', risks.riskPhysio); 
-            
             setBar('bar-dist', 'val-dist', risks.riskDist);
             setBar('bar-stroke', 'val-stroke', risks.riskStroke);
         }
@@ -856,11 +873,19 @@
             state.yawnCount = 0;
             state.yawnStartTime = null;
             state.yawnRegistered = false;
-            state.distractionStartTime = null; // Reset Distraction
+            state.distractionStartTime = null;
+            state.eyeClosedStartTime = null;
+            
+            // Hide Overlays
+            fatigueOverlay.style.display = 'none';
+            document.getElementById('yawn-progress').style.display = 'none';
+            document.getElementById('dist-progress').style.display = 'none';
+            document.getElementById('blink-progress').style.display = 'none';
+            
             runFusionEngine();
         }
 
-        // --- Camera & Upload Handling ---
+        // --- Camera & Upload ---
         const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
         faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
         faceMesh.onResults(onResults);
@@ -887,10 +912,7 @@
                     isImageMode = true;
                     document.getElementById('mode-badge').innerText = "Static Image Analysis";
                     canvasElement.classList.remove('mirror-mode');
-                    
-                    // Stop Camera
                     videoElement.pause();
-                    
                     imageElement.src = e.target.result;
                     imageElement.onload = async () => {
                         canvasElement.width = imageElement.naturalWidth;
@@ -903,18 +925,14 @@
             }
         }
 
-        // Bio Chart Animation Loop
         setInterval(() => {
             const ds0 = bioChart.data.datasets[0].data;
             const ds1 = bioChart.data.datasets[1].data;
-            
-            // Add noise to simulate real sensors
             ds0.shift(); ds0.push(state.sdnn + (Math.random()*4 - 2));
             ds1.shift(); ds1.push(state.gsr + (Math.random()*0.5 - 0.25));
             bioChart.update();
         }, 200);
 
-        // Start
         activateCamera();
 
     </script>
